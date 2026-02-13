@@ -12,7 +12,8 @@ ADMIN_ID = 1317771276  # O‘Z TELEGRAM ID INGIZNI YOZING
 required_channels = [
     "@bazarelon",
     "@abdulumar2025",
-    "@navzarmedia"
+    "@navzarmedia",
+    "@abdulhamidumid2026"
 ]
 
 DATA_FILE = "videos.json"
@@ -145,3 +146,4 @@ def send_video(message):
 
 
 bot.polling()
+
