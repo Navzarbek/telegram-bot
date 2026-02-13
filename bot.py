@@ -13,7 +13,7 @@ required_channels = [
     "@bazarelon",
     "@abdulumar2025",
     "@navzarmedia",
-    "@abdulhamidumid2026"
+    "@abdulhamidumar2026"
 ]
 
 DATA_FILE = "videos.json"
@@ -146,4 +146,5 @@ def send_video(message):
 
 
 bot.polling()
+
 
