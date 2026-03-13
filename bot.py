@@ -4,8 +4,8 @@ import sqlite3
 import random
 import string
 
-TOKEN = "YOUR_BOT_TOKEN"
-ADMIN_ID = 123456789  # o'z Telegram ID ingiz
+TOKEN = "8227543322:AAEtWyIHLiUe-2oPLv1x1IhIQHEoLfpoxqE"
+ADMIN_ID = 1317771276  # o'z Telegram ID ingiz
 
 required_channels = [
     "@bazarelon",
@@ -268,3 +268,4 @@ def search_or_code(message):
 
 print("Bot ishga tushdi...")
 bot.infinity_polling()
+
