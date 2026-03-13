@@ -1,13 +1,11 @@
 import telebot
 from telebot import types
-import json
-import os
-import time
+import sqlite3
+import random
+import string
 
-TOKEN = "8227543322:AAEtWyIHLiUe-2oPLv1x1IhIQHEoLfpoxqE"
-bot = telebot.TeleBot(TOKEN)
-
-ADMIN_ID = 1317771276  # O‘Z TELEGRAM ID INGIZNI YOZING
+TOKEN = "YOUR_BOT_TOKEN"
+ADMIN_ID = 123456789  # o'z Telegram ID ingiz
 
 required_channels = [
     "@bazarelon",
@@ -16,135 +14,257 @@ required_channels = [
     "@abdulhamidumar2026"
 ]
 
-DATA_FILE = "videos.json"
+bot = telebot.TeleBot(TOKEN)
 
-# JSON fayl yaratish
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w") as f:
-        json.dump({}, f)
+# DATABASE
+conn = sqlite3.connect("database.db", check_same_thread=False)
+cursor = conn.cursor()
 
-def load_videos():
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS videos(
+code TEXT PRIMARY KEY,
+title TEXT,
+file_id TEXT,
+premium INTEGER
+)
+""")
 
-def save_videos(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS premium_users(
+user_id INTEGER PRIMARY KEY
+)
+""")
 
+conn.commit()
+
+# -----------------
+# KOD GENERATOR
+# -----------------
+def generate_code():
+    return ''.join(random.choices(string.digits, k=5))
+
+def generate_codes(n=1000):
+    codes = set()
+    while len(codes) < n:
+        codes.add(generate_code())
+    return list(codes)
+
+# -----------------
+# OBUNA TEKSHIRISH
+# -----------------
 def check_subscription(user_id):
     for channel in required_channels:
-        status = bot.get_chat_member(channel, user_id).status
-        if status not in ["member", "administrator", "creator"]:
+        try:
+            status = bot.get_chat_member(channel, user_id).status
+            if status not in ["member", "administrator", "creator"]:
+                return False
+        except:
             return False
     return True
 
-pending_code = {}
-premium_users = set()
+def subscription_markup():
+    markup = types.InlineKeyboardMarkup()
+    for ch in required_channels:
+        markup.add(types.InlineKeyboardButton(
+            f"📢 {ch}",
+            url=f"https://t.me/{ch[1:]}"
+        ))
+    markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_sub"))
+    return markup
 
+# -----------------
 # START
+# -----------------
 @bot.message_handler(commands=['start'])
 def start(message):
-    if not check_subscription(message.from_user.id):
-        markup = types.InlineKeyboardMarkup()
-        for channel in required_channels:
-            markup.add(types.InlineKeyboardButton("📢 Kanalga obuna", url=f"https://t.me/{channel[1:]}"))
-        markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check"))
-        bot.send_message(message.chat.id, "❗ Avval kanalga obuna bo‘ling", reply_markup=markup)
-    else:
-        bot.send_message(message.chat.id, "📩 Kod yuboring")
 
-# Tekshirish tugmasi
-@bot.callback_query_handler(func=lambda call: call.data == "check")
-def callback_check(call):
-    bot.send_chat_action(call.message.chat.id, "typing")
-    time.sleep(1.5)
+    if not check_subscription(message.from_user.id):
+        bot.send_message(
+            message.chat.id,
+            "❗ Botdan foydalanish uchun kanallarga obuna bo‘ling",
+            reply_markup=subscription_markup()
+        )
+        return
+
+    if message.from_user.id == ADMIN_ID:
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.add("➕ Kino qo‘shish", "📊 Statistika")
+        markup.add("⚡ 1000 kod yaratish")
+        bot.send_message(message.chat.id, "🛠 Admin panel", reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id,
+        "🎬 Kino kodini yuboring yoki nomini yozib qidiring")
+
+# -----------------
+# OBUNA TEKSHIRISH
+# -----------------
+@bot.callback_query_handler(func=lambda call: call.data=="check_sub")
+def check_sub(call):
 
     if check_subscription(call.from_user.id):
         bot.edit_message_text(
-            "✅ Obuna tasdiqlandi!\n\n📩 Endi kod yuboring.",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id
+            "✅ Obuna tasdiqlandi\n\n/start ni bosing",
+            call.message.chat.id,
+            call.message.message_id
         )
     else:
-        bot.answer_callback_query(call.id, "❌ Hali barcha kanallarga obuna bo‘lmagansiz")
+        bot.answer_callback_query(call.id, "❌ Hali obuna bo‘lmadingiz")
 
-# Admin: yangi kod qo‘shish
-@bot.message_handler(commands=['add'])
-def add_video(message):
+# -----------------
+# 1000 KOD GENERATOR
+# -----------------
+@bot.message_handler(func=lambda m: m.text=="⚡ 1000 kod yaratish")
+def create_codes(message):
+
     if message.from_user.id != ADMIN_ID:
         return
 
-    try:
-        code = message.text.split()[1]
-        pending_code[message.from_user.id] = code
-        bot.send_message(message.chat.id, f"📥 {code} kodi uchun videoni yuboring")
-    except:
-        bot.send_message(message.chat.id, "❗ Format: /add 101")
+    codes = generate_codes(1000)
 
-# Video saqlash
-@bot.message_handler(content_types=['video'])
-def save_video(message):
-    if message.from_user.id == ADMIN_ID and message.from_user.id in pending_code:
-        code = pending_code[message.from_user.id]
-        videos = load_videos()
-        videos[code] = {
-            "file_id": message.video.file_id,
-            "premium": False
-        }
-        save_videos(videos)
-        bot.send_message(message.chat.id, f"✅ {code} kodi saqlandi")
-        del pending_code[message.from_user.id]
+    txt = "\n".join(codes[:50])
 
-# Kodni premium qilish
+    bot.send_message(
+        message.chat.id,
+        f"✅ 1000 ta kod yaratildi\n\nNamuna:\n{txt}"
+    )
+
+# -----------------
+# KINO QO‘SHISH
+# -----------------
+@bot.message_handler(func=lambda m: m.text=="➕ Kino qo‘shish")
+def add_movie(message):
+
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    msg = bot.send_message(message.chat.id,
+    "🎬 Video yuboring\nCaptionga kino nomini yozing")
+    bot.register_next_step_handler(msg, save_movie)
+
+def save_movie(message):
+
+    if message.content_type != "video":
+        bot.send_message(message.chat.id, "❌ Video yuboring")
+        return
+
+    title = message.caption if message.caption else "Nomsiz"
+    code = generate_code()
+
+    cursor.execute(
+        "INSERT INTO videos VALUES(?,?,?,?)",
+        (code, title.lower(), message.video.file_id, 0)
+    )
+
+    conn.commit()
+
+    bot.send_message(
+        message.chat.id,
+        f"✅ Kino saqlandi\n\n🎬 {title}\n📀 Kod: {code}"
+    )
+
+# -----------------
+# PREMIUM KINO
+# -----------------
 @bot.message_handler(commands=['premiumcode'])
-def make_premium(message):
+def premium_code(message):
+
     if message.from_user.id != ADMIN_ID:
         return
 
-    try:
-        code = message.text.split()[1]
-        videos = load_videos()
+    code = message.text.split()[1]
 
-        if code in videos:
-            videos[code]["premium"] = True
-            save_videos(videos)
-            bot.send_message(message.chat.id, f"🔒 {code} premium qilindi")
-        else:
-            bot.send_message(message.chat.id, "❌ Bunday kod yo‘q")
-    except:
-        bot.send_message(message.chat.id, "❗ Format: /premiumcode 500")
+    cursor.execute(
+        "UPDATE videos SET premium=1 WHERE code=?",
+        (code,)
+    )
 
-# Foydalanuvchini premium qilish
+    conn.commit()
+
+    bot.send_message(message.chat.id,"🔒 Premium qilindi")
+
+# -----------------
+# PREMIUM USER
+# -----------------
 @bot.message_handler(commands=['addpremium'])
-def add_premium_user(message):
+def add_premium(message):
+
     if message.from_user.id != ADMIN_ID:
         return
 
-    try:
-        user_id = int(message.text.split()[1])
-        premium_users.add(user_id)
-        bot.send_message(message.chat.id, f"⭐ {user_id} premium qilindi")
-    except:
-        bot.send_message(message.chat.id, "❗ Format: /addpremium 123456789")
+    user = int(message.text.split()[1])
 
-# Kod yozilganda
-@bot.message_handler(func=lambda message: not message.text.startswith("/"))
-def send_video(message):
+    cursor.execute(
+        "INSERT OR IGNORE INTO premium_users VALUES(?)",
+        (user,)
+    )
 
-    videos = load_videos()
+    conn.commit()
 
-    if message.text in videos:
-        video_data = videos[message.text]
+    bot.send_message(message.chat.id,"⭐ Premium user qo‘shildi")
 
-        if video_data["premium"] and message.from_user.id not in premium_users:
-            bot.send_message(message.chat.id, "🔒 Bu kod premium.")
-            return
+# -----------------
+# STATISTIKA
+# -----------------
+@bot.message_handler(func=lambda m: m.text=="📊 Statistika")
+def stats(message):
 
-        bot.send_video(message.chat.id, video_data["file_id"])
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    cursor.execute("SELECT COUNT(*) FROM videos")
+    movies = cursor.fetchone()[0]
+
+    bot.send_message(
+        message.chat.id,
+        f"🎬 Kinolar soni: {movies}"
+    )
+
+# -----------------
+# KINO QIDIRUV
+# -----------------
+@bot.message_handler(func=lambda message: True)
+def search_or_code(message):
+
+    text = message.text.lower()
+
+    cursor.execute(
+        "SELECT code,title,file_id,premium FROM videos WHERE code=?",
+        (text,)
+    )
+
+    result = cursor.fetchone()
+
+    if result:
+        code,title,file_id,premium = result
+
+        if premium:
+            cursor.execute(
+                "SELECT user_id FROM premium_users WHERE user_id=?",
+                (message.from_user.id,)
+            )
+            if not cursor.fetchone():
+                bot.send_message(message.chat.id,"🔒 Bu kino premium")
+                return
+
+        bot.send_video(message.chat.id,file_id)
+        return
+
+    # QIDIRUV
+    cursor.execute(
+        "SELECT code,title FROM videos WHERE title LIKE ? LIMIT 5",
+        (f"%{text}%",)
+    )
+
+    results = cursor.fetchall()
+
+    if results:
+        msg = "🔍 Topilgan kinolar:\n\n"
+        for code,title in results:
+            msg += f"🎬 {title}\n📀 Kod: {code}\n\n"
+
+        bot.send_message(message.chat.id,msg)
     else:
-        bot.send_message(message.chat.id, "❌ Bunday kod yo‘q")
+        bot.send_message(message.chat.id,"❌ Hech narsa topilmadi")
 
-
-bot.polling()
-
-
+print("Bot ishga tushdi...")
+bot.infinity_polling()
